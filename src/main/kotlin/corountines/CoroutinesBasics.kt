@@ -44,5 +44,15 @@ object CoroutinesBasics {
         job.join() // wait until child coroutine completes
         println("Done")
     }
+
+    suspend fun lightWeight() = coroutineScope {
+        println("Running: CoroutinesBasics.lightWeight()")
+        repeat(50_000) {
+            launch {
+                delay(5000L)
+                print(".")
+            }
+        }
+    }
 }
 

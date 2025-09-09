@@ -7,9 +7,10 @@ import org.example.corountines.CoroutinesBasics
 // click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
 fun main() {
     runBlocking { // this: CoroutineScope, bridges coroutine world with main thread world, blocking the thread
-        // CoroutinesBasics.helloWorld2()
-        // CoroutinesBasics.helloWorld2()
-        // println("Done")
+        CoroutinesBasics.helloWorld2()
+        CoroutinesBasics.helloWorld2()
+        println("Done")
         CoroutinesBasics.explicitJob()
+        CoroutinesBasics.lightWeight()
     }
 }

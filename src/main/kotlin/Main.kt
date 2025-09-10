@@ -1,6 +1,7 @@
 package org.example
 
 import kotlinx.coroutines.runBlocking
+import org.example.corountines.CancellationAndTimeout
 import org.example.corountines.ChannelsBasics
 import org.example.corountines.CoroutinesBasics
 
@@ -14,6 +15,14 @@ fun main() {
 //        CoroutinesBasics.explicitJob()
 //        CoroutinesBasics.lightWeight()
 
-        ChannelsBasics.simpleChannels()
+//        CancellationAndTimeout.cancellingExecution()
+//        CancellationAndTimeout.cancellationIsCooperative1()
+//        CancellationAndTimeout.cancellationIsCooperative2()
+//        CancellationAndTimeout.makingCoputationCodeCancellable()
+//        CancellationAndTimeout.closingResourcesWithFinally()
+//        CancellationAndTimeout.runNonCancellableBlock()
+//        CancellationAndTimeout.timeoutOrNull()
+//        CancellationAndTimeout.asynchronousTimeoutAndResources()
+        CancellationAndTimeout.asynchronousTimeoutAndResourcesWorkaround()
     }
 }

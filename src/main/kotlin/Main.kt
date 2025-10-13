@@ -19,7 +19,7 @@ fun main() {
 //        CancellationAndTimeout.cancellingExecution()
 //        CancellationAndTimeout.cancellationIsCooperative1()
 //        CancellationAndTimeout.cancellationIsCooperative2()
-//        CancellationAndTimeout.makingCoputationCodeCancellable()
+//        CancellationAndTimeout.makingComputationCodeCancellable()
 //        CancellationAndTimeout.closingResourcesWithFinally()
 //        CancellationAndTimeout.runNonCancellableBlock()
 //        CancellationAndTimeout.timeoutOrNull()

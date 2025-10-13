@@ -72,7 +72,7 @@ object CancellationAndTimeout {
         println("main: Now I can quit.")
     }
 
-    suspend fun makingCoputationCodeCancellable() = coroutineScope {
+    suspend fun makingComputationCodeCancellable() = coroutineScope {
         val startTime = System.currentTimeMillis()
         val job = launch(Dispatchers.Default) {
             var nextPrintTime = startTime

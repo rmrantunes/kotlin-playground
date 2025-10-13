@@ -5,12 +5,12 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 object ChannelsBasics {
-    fun channelTypes() {
+//    fun channelTypes() {
 //        val rendezvousChannel = Channel<String>()
 //        val bufferedChannel = Channel<String>(10)
 //        val conflatedChannel = Channel<String>(CONFLATED)
 //        val unlimitedChannel = Channel<String>(UNLIMITED)
-    }
+//    }
 
     suspend fun simpleChannels() = coroutineScope {
         val channel = Channel<String>()

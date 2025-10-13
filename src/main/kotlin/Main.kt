@@ -3,6 +3,7 @@ package org.example
 import kotlinx.coroutines.runBlocking
 import org.example.corountines.CancellationAndTimeout
 import org.example.corountines.ChannelsBasics
+import org.example.corountines.ComposingSuspendingFns
 import org.example.corountines.CoroutinesBasics
 
 //TIP To <b>Run</b> code, press <shortcut actionId="Run"/> or
@@ -23,6 +24,14 @@ fun main() {
 //        CancellationAndTimeout.runNonCancellableBlock()
 //        CancellationAndTimeout.timeoutOrNull()
 //        CancellationAndTimeout.asynchronousTimeoutAndResources()
-        CancellationAndTimeout.asynchronousTimeoutAndResourcesWorkaround()
+//        CancellationAndTimeout.asynchronousTimeoutAndResourcesWorkaround()
+
+//        ComposingSuspendingFns.sequentialByDefault()
+//        ComposingSuspendingFns.concurrentUsingAsync()
+//        ComposingSuspendingFns.lazyStartedAsync()
+//        ComposingSuspendingFns.structuredConcurrencyWithAsync()
+//        ComposingSuspendingFns.cancellationPropagation()
+//        ComposingSuspendingFns.asyncStyleFunctions()
     }
+
 }

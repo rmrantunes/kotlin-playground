@@ -4,9 +4,9 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
-import kotlin.system.measureTimeMillis
 import kotlin.test.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class AsynchronousFlow {
     @Test
     fun representingMultipleValues() {
@@ -104,9 +104,9 @@ class AsynchronousFlow {
         }
 
         (1..3).asFlow().transform { value ->
-                emit("Making request #$value")
-                emit(performRequest(value))
-            }.collect { value -> println(value) }
+            emit("Making request #$value")
+            emit(performRequest(value))
+        }.collect { value -> println(value) }
     }
 
     @Test
@@ -180,7 +180,7 @@ class AsynchronousFlow {
     fun buffering() = runTest {
         fun simple() = flow {
             for (i in 1..3) {
-                delay(100)
+                delay(150)
                 emit(i)
             }
         }
@@ -195,14 +195,51 @@ class AsynchronousFlow {
         println("Collected in ${currentTime - time} ms - without buffer")
 
         val time2 = currentTime
-        simple()
-            .buffer()
+        simple().buffer().collect { value ->
+            delay(300)
+            println(value)
+        }
+
+        println("Collected in ${currentTime - time2} ms - with buffer")
+
+    }
+
+    @Test
+    fun conflation() = runTest {
+        fun simple() = flow {
+            for (i in 1..3) {
+                delay(150)
+                emit(i)
+            }
+        }
+
+        val time = currentTime
+        simple().conflate() // conflate emissions, don't process each one
             .collect { value ->
                 delay(300)
                 println(value)
             }
+        // while the first number was still being processed the second, and third were already produced,
+        // so the second one was conflated and only the most recent (the third one) was delivered to the collector
+        println("Collected in ${currentTime - time} ms")
+    }
 
-        println("Collected in ${currentTime - time2} ms - with buffer")
+    @Test
+    fun processingLatestValue() = runTest {
+        fun simple() = flow {
+            for (i in 1..3) {
+                delay(100)
+                emit(i)
+            }
+        }
 
+        val time = currentTime
+        simple().collectLatest { value ->
+                println("Collecting $value")
+                delay(300) // While suspended, if a new value is emitted, then the current value collection
+                                        // execution is cancelled
+                println("Collected indeed $value")
+            }
+        println("Collected in ${currentTime - time} ms")
     }
 }

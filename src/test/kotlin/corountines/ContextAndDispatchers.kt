@@ -1,11 +1,15 @@
 package org.example.corountines
 
 import kotlinx.coroutines.*
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
 import kotlin.time.Duration.Companion.seconds
 
-object ContextAndDispatchers {
+/** @see - https://kotlinlang.org/docs/coroutine-context-and-dispatchers.html */
+class ContextAndDispatchers {
     @OptIn(ExperimentalCoroutinesApi::class, DelicateCoroutinesApi::class)
-    suspend fun simple() = coroutineScope {
+    @Test
+    fun simple() = runTest {
         launch { // context of parent, main runBlocking coroutine
             println("main runBlocking  -> thread name: ${Thread.currentThread().name}")
         }
@@ -24,7 +28,8 @@ object ContextAndDispatchers {
     }
 
     @OptIn(ExperimentalCoroutinesApi::class, DelicateCoroutinesApi::class)
-    suspend fun unconfinedVsConfined() = coroutineScope {
+    @Test
+    fun unconfinedVsConfined() = runTest {
         launch(Dispatchers.Unconfined) {
             println("Unconfined  -> working in: ${Thread.currentThread().name}")
             delay(500)
@@ -42,8 +47,8 @@ object ContextAndDispatchers {
     }
 
     @OptIn(ExperimentalCoroutinesApi::class, DelicateCoroutinesApi::class)
+    @Test
     fun jumpingBetweenThreads() {
-
         newSingleThreadContext("Ctx1").use { ctx1 ->
             newSingleThreadContext("Ctx2").use { ctx2 ->
                 runBlocking(ctx1) {
@@ -59,11 +64,13 @@ object ContextAndDispatchers {
         }
     }
 
-    suspend fun jobInTheContext() = coroutineScope {
+    @Test
+    fun jobInTheContext() = runTest {
         println("My job is ${coroutineContext[Job]}")
     }
 
-    suspend fun childrenOfCoroutine() = coroutineScope {
+    @Test
+    fun childrenOfCoroutine() = runTest {
         val request = launch {
             launch(Job()) {
                 println("job1: I run in my own job and execute independently!")
@@ -87,13 +94,14 @@ object ContextAndDispatchers {
         delay(1000)
     }
 
-    suspend fun parentalResponsibilities() = coroutineScope {
+    @Test
+    fun parentalResponsibilities() = runTest {
         // launch a coroutine to process some kind of incoming request
         val request = launch {
             // launch a few children jobs
             repeat(3) {
                 launch {
-                    delay(it + 1 * 200L) // variable delay 200ms, 400ms, 600ms
+                    delay((it + 1) * 200L) // variable delay 200ms, 400ms, 600ms
                     println("Coroutine $it is done")
                 }
             }
@@ -105,7 +113,8 @@ object ContextAndDispatchers {
         println("Now the processing of the request is complete!")
     }
 
-    suspend fun namingCoroutinesForDebugging() = coroutineScope {
+    @Test
+    fun namingCoroutinesForDebugging() = runTest {
         val v1 = async(CoroutineName("v1coroutine")) {
             delay(500)
             log("Computing v1")
@@ -121,13 +130,15 @@ object ContextAndDispatchers {
         println("The answer for v1 * v2 is ${v1.await() * v2.await()}")
     }
 
-    suspend fun combiningContextElements() = coroutineScope {
+    @Test
+    fun combiningContextElements() = runTest {
         launch(Dispatchers.Default + CoroutineName("test")) {
             println("I'm working in the thread ${Thread.currentThread().name}")
         }
     }
 
-    suspend fun coroutineScopes() = coroutineScope {
+    @Test
+    fun coroutineScopes() = runBlocking {
         class Activity {
             private val mainScope = CoroutineScope(Dispatchers.Default)
 
@@ -139,7 +150,7 @@ object ContextAndDispatchers {
                 repeat(10) {
                     mainScope.launch {
                         delay((it + 1) * 200L)
-                        println("Coroutine $it is done!")
+                        println("main: Coroutine $it is done!")
                     }
                 }
             }
@@ -154,7 +165,8 @@ object ContextAndDispatchers {
         delay(1.seconds)
     }
 
-    suspend fun threadLocalData() = coroutineScope {
+    @Test
+    fun threadLocalData() = runTest {
         val threadLocal = ThreadLocal<String?>() // declare thread-local variable
 
         threadLocal.set("main")

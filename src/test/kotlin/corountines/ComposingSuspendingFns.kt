@@ -1,18 +1,15 @@
 package org.example.corountines
 
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
+import kotlinx.coroutines.test.runTest
 import kotlin.system.measureTimeMillis
+import kotlin.test.Test
 
 /**
  * @see - https://kotlinlang.org/docs/composing-suspending-functions.html
  * */
-object ComposingSuspendingFns {
+class ComposingSuspendingFns {
+
     suspend fun doSomethingUsefulOne(): Int {
         delay(1000L)
         return 13
@@ -33,7 +30,8 @@ object ComposingSuspendingFns {
         doSomethingUsefulTwo()
     }
 
-    suspend fun sequentialByDefault() = coroutineScope {
+    @Test
+    fun sequentialByDefault() = runTest {
         val time = measureTimeMillis {
             val one = doSomethingUsefulOne()
             val two = doSomethingUsefulTwo()
@@ -43,7 +41,8 @@ object ComposingSuspendingFns {
         println("Completed in $time ms")
     }
 
-    suspend fun concurrentUsingAsync() = coroutineScope {
+    @Test
+    fun concurrentUsingAsync() = runTest {
         val time = measureTimeMillis {
             val one = async { doSomethingUsefulOne() }
             val two = async { doSomethingUsefulTwo() }
@@ -53,7 +52,8 @@ object ComposingSuspendingFns {
         println("Completed in $time ms")
     }
 
-    suspend fun lazyStartedAsync() = coroutineScope {
+    @Test
+    fun lazyStartedAsync() = runTest {
         val time = measureTimeMillis {
             val one = async(start = CoroutineStart.LAZY) { doSomethingUsefulOne() }
             val two = async(start = CoroutineStart.LAZY) { doSomethingUsefulTwo() }
@@ -68,6 +68,7 @@ object ComposingSuspendingFns {
     /**
      * Run this function directly inside main (no runBlocking)
      */
+    @Test
     fun asyncStyleFunctions() {
         val time = measureTimeMillis {
             val one = doSomethingUsefulOneAsync()
@@ -87,14 +88,17 @@ object ComposingSuspendingFns {
         one.await() + two.await()
     }
 
-    suspend fun structuredConcurrencyWithAsync() {
+
+    @Test
+    fun structuredConcurrencyWithAsync() = runTest {
         val time = measureTimeMillis {
             println("The answer is ${concurrentSum()}")
         }
         println("Completed in $time ms")
     }
 
-    suspend fun cancellationPropagation()  {
+    @Test
+    fun cancellationPropagation() = runTest {
         try {
             failedConcurrentSum()
         } catch (e: ArithmeticException) {

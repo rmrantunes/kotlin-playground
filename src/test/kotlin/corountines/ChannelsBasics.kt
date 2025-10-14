@@ -1,10 +1,11 @@
 package org.example.corountines
 
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
 
-object ChannelsBasics {
+class ChannelsBasics {
 //    fun channelTypes() {
 //        val rendezvousChannel = Channel<String>()
 //        val bufferedChannel = Channel<String>(10)
@@ -12,7 +13,8 @@ object ChannelsBasics {
 //        val unlimitedChannel = Channel<String>(UNLIMITED)
 //    }
 
-    suspend fun simpleChannels() = coroutineScope {
+    @Test
+    fun simpleChannels() = runTest {
         val channel = Channel<String>()
 
         launch {

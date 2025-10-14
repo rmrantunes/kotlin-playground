@@ -1,6 +1,8 @@
 package org.example.corountines
 
 import kotlinx.coroutines.*
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
 
 var acquired = 0
 
@@ -14,8 +16,9 @@ class CancellationAndTimeoutResource {
     }
 }
 
-object CancellationAndTimeout {
-    suspend fun cancellingExecution() = coroutineScope {
+class CancellationAndTimeout {
+    @Test
+    fun cancellingExecution() = runTest {
         println("Running: CancellationAndTimeout.cancellingExecution()")
 
         val job = launch {
@@ -33,7 +36,8 @@ object CancellationAndTimeout {
         println("main: Now I can quit.")
     }
 
-    suspend fun cancellationIsCooperative1() = coroutineScope {
+    @Test
+    fun cancellationIsCooperative1() = runTest {
         val startTime = System.currentTimeMillis()
         val job = launch(Dispatchers.Default) {
             var nextPrintTime = startTime
@@ -53,7 +57,8 @@ object CancellationAndTimeout {
         println("main: Now I can quit.")
     }
 
-    suspend fun cancellationIsCooperative2() = coroutineScope {
+    @Test
+    fun cancellationIsCooperative2() = runTest {
         val job = launch(Dispatchers.Default) {
 
             repeat(5) { i ->
@@ -72,7 +77,8 @@ object CancellationAndTimeout {
         println("main: Now I can quit.")
     }
 
-    suspend fun makingComputationCodeCancellable() = coroutineScope {
+    @Test
+    fun makingComputationCodeCancellable() = runTest {
         val startTime = System.currentTimeMillis()
         val job = launch(Dispatchers.Default) {
             var nextPrintTime = startTime
@@ -92,7 +98,8 @@ object CancellationAndTimeout {
         println("main: Now I can quit.")
     }
 
-    suspend fun closingResourcesWithFinally() = coroutineScope {
+    @Test
+    fun closingResourcesWithFinally() = runTest {
         val job = launch(Dispatchers.Default) {
 
             try {
@@ -111,7 +118,8 @@ object CancellationAndTimeout {
         println("main: Now I can quit.")
     }
 
-    suspend fun runNonCancellableBlock() = coroutineScope {
+    @Test
+    fun runNonCancellableBlock() = runTest {
         val job = launch(Dispatchers.Default) {
 
             try {
@@ -134,7 +142,8 @@ object CancellationAndTimeout {
         println("main: Now I can quit.")
     }
 
-    suspend fun timeout() = coroutineScope {
+    @Test
+    fun timeout() = runTest {
         withTimeout(1300L) {
             repeat(1000) { i ->
                 println("I'm sleeping $i...")
@@ -143,7 +152,8 @@ object CancellationAndTimeout {
         }
     }
 
-    suspend fun timeoutOrNull() = coroutineScope {
+    @Test
+    fun timeoutOrNull() = runTest {
         val result = withTimeoutOrNull(1300L) {
             repeat(1000) { i ->
                 println("I'm sleeping $i...")
@@ -156,7 +166,8 @@ object CancellationAndTimeout {
         println("Result is $result")
     }
 
-    suspend fun asynchronousTimeoutAndResources() {
+    @Test
+    fun asynchronousTimeoutAndResources() = runTest {
         coroutineScope {
             repeat(10_000) {
                 launch {
@@ -171,7 +182,8 @@ object CancellationAndTimeout {
         println(acquired)
     }
 
-    suspend fun asynchronousTimeoutAndResourcesWorkaround() {
+    @Test
+    fun asynchronousTimeoutAndResourcesWorkaround() = runTest {
         coroutineScope {
             repeat(10_000) {
                 var resource: CancellationAndTimeoutResource? = null

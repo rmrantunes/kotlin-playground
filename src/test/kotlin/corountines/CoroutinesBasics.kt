@@ -3,12 +3,15 @@ package org.example.corountines
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
 
 /**
  * @see - https://kotlinlang.org/docs/coroutines-basics.html
  * */
-object CoroutinesBasics {
-    suspend fun helloWorld() {
+class CoroutinesBasics {
+    @Test
+    fun helloWorld() = runTest {
         println("Running: CoroutinesBasics.helloWorld()")
         coroutineScope { // this: CoroutineScope
             launch { // launch a new coroutine and continue
@@ -20,7 +23,8 @@ object CoroutinesBasics {
         }
     }
 
-    suspend fun helloWorld2() = coroutineScope {
+    @Test
+    fun helloWorld2() = runTest {
         println("Running: CoroutinesBasics.helloWorld2()")
         launch {
             delay(2000L)
@@ -34,7 +38,8 @@ object CoroutinesBasics {
         println("Hello")
     }
 
-    suspend fun explicitJob() = coroutineScope {
+    @Test
+    fun explicitJob() = runTest {
         println("Running: CoroutinesBasics.explicitJob()")
         val job = launch { // launch a new coroutine and keep a reference to its Job
             delay(1000L)
@@ -45,7 +50,8 @@ object CoroutinesBasics {
         println("Done")
     }
 
-    suspend fun lightWeight() = coroutineScope {
+    @Test
+    fun lightWeight() = runTest {
         println("Running: CoroutinesBasics.lightWeight()")
         repeat(50_000) {
             launch {

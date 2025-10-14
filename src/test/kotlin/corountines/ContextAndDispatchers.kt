@@ -180,6 +180,3 @@ class ContextAndDispatchers {
         println("Post-main, current thread: ${Thread.currentThread()}, thread local value: '${threadLocal.get()}'")
     }
 }
-
-
-fun log(msg: String) = println("[${Thread.currentThread().name}] $msg")

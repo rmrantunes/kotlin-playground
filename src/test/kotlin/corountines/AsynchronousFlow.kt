@@ -1,10 +1,10 @@
 package org.example.corountines
 
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.system.measureTimeMillis
 import kotlin.test.Test
 
 class AsynchronousFlow {
@@ -93,9 +93,7 @@ class AsynchronousFlow {
             return "request #$id"
         }
 
-        (1..3).asFlow()
-            .map { value -> performRequest(value) }
-            .collect { value -> println(value) }
+        (1..3).asFlow().map { value -> performRequest(value) }.collect { value -> println(value) }
     }
 
     @Test
@@ -105,12 +103,10 @@ class AsynchronousFlow {
             return "request #$id"
         }
 
-        (1..3).asFlow()
-            .transform { value ->
+        (1..3).asFlow().transform { value ->
                 emit("Making request #$value")
                 emit(performRequest(value))
-            }
-            .collect { value -> println(value) }
+            }.collect { value -> println(value) }
     }
 
     @Test
@@ -130,9 +126,9 @@ class AsynchronousFlow {
     }
 
     @Test
-    /**
-     * @see - https://kotlinlang.org/docs/flow.html#terminal-flow-operators
-     * */
+            /**
+             * @see - https://kotlinlang.org/docs/flow.html#terminal-flow-operators
+             * */
     fun terminalFlowOperators() = runTest {
         val sum = (1..5).asFlow().map { it * it }.reduce { a, b -> a + b }// sum them (terminal operator)
         println(sum)
@@ -149,5 +145,64 @@ class AsynchronousFlow {
         }.collect {
             println("collect: $it")
         }
+    }
+
+    @Test
+    fun flowContextPitfall() = runTest {
+        fun simple() = flow<Int> {
+            // The WRONG way to change context for CPU-consuming code in flow builder
+            withContext(Dispatchers.Default) { // emit() will throw an exception
+                for (i in 1..3) {
+                    Thread.sleep(500L)
+                    emit(i)
+                }
+            }
+        }
+
+        simple().collect { value -> println(value) }
+    }
+
+    @Test
+    fun flowOnOperators() = runTest {
+        fun simple() = flow<Int> {
+            for (i in 1..3) {
+                Thread.sleep(500L)
+                log("Emitting: $i")
+                emit(i)
+            }
+        }.flowOn(Dispatchers.Default)
+
+        simple().collect { value -> log("Collected: $value") }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun buffering() = runTest {
+        fun simple() = flow {
+            for (i in 1..3) {
+                delay(100)
+                emit(i)
+            }
+        }
+
+        val time = currentTime
+
+        simple().collect { value ->
+            delay(300)
+            println(value)
+        }
+
+        println("Collected in ${currentTime - time} ms - without buffer")
+
+        val time2 = currentTime
+        simple()
+            .buffer()
+            .collect { value ->
+                delay(300)
+                println(value)
+            }
+
+        println("Collected in ${currentTime - time2} ms - with buffer")
+
     }
 }

@@ -4,6 +4,7 @@ import kotlinx.coroutines.runBlocking
 import org.example.corountines.CancellationAndTimeout
 import org.example.corountines.ChannelsBasics
 import org.example.corountines.ComposingSuspendingFns
+import org.example.corountines.ContextAndDispatchers
 import org.example.corountines.CoroutinesBasics
 
 //TIP To <b>Run</b> code, press <shortcut actionId="Run"/> or
@@ -32,6 +33,15 @@ fun main() {
 //        ComposingSuspendingFns.structuredConcurrencyWithAsync()
 //        ComposingSuspendingFns.cancellationPropagation()
 //        ComposingSuspendingFns.asyncStyleFunctions()
+
+//        ContextAndDispatchers.simple()
+        //ContextAndDispatchers.unconfinedVsConfined()
+        // ContextAndDispatchers.jumpingBetweenThreads()
+        //ContextAndDispatchers.jobInTheContext()
+        // ContextAndDispatchers.childrenOfCoroutine()
+        // ContextAndDispatchers.combiningContextElements()
+        ContextAndDispatchers.threadLocalData()
+
     }
 
 }

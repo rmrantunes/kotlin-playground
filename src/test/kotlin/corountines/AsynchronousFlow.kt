@@ -384,4 +384,34 @@ class AsynchronousFlow {
             .catch { e -> println("Caught $e") }
             .collect()
     }
+
+    @Test
+    fun imperativeFinallyBlock() = runTest {
+        fun simple() = (1..3).asFlow()
+
+        try {
+            simple()
+                .collect { value -> println(value) }
+        } finally {
+            println("Done")
+        }
+    }
+
+    @Test
+    fun declarativeFinallyBlock() = runTest {
+        fun simple() = (1..3).asFlow()
+        fun simpleWithException() = flow {
+            emit(1)
+            throw RuntimeException()
+        }
+
+        simple()
+            .onCompletion { println("Done") }
+            .collect { value -> println(value) }
+
+        simpleWithException()
+            .onCompletion { cause -> if (cause != null) println("Flow completed exceptionally") }
+            .catch { e -> println("Caught $e") }
+            .collect { value -> println(value) }
+    }
 }

@@ -272,4 +272,41 @@ class AsynchronousFlow {
             println("with combine: '$value' at ${currentTime - startTime2} ms from start")
         }
     }
+
+    @Test
+    fun flatteningFlows() = runTest {
+        fun requestFlow(i: Int): Flow<String> = flow {
+            emit("$i: First")
+            delay(500) // wait 500 ms
+            emit("$i: Second")
+        }
+
+        val startTime = currentTime
+        (1..3).asFlow()
+            .onEach { delay(100) }
+            .flatMapConcat { requestFlow(it) }
+            .collect { value ->
+            println("flatMapConcat: $value collected ${currentTime - startTime} ms from start")
+        }
+
+        println("-".repeat(50))
+
+        val startTime2 = currentTime
+        (1..3).asFlow()
+            .onEach { delay(100) }
+            .flatMapMerge { requestFlow(it) }
+            .collect { value ->
+                println("flatMapMerge: $value collected ${currentTime - startTime2} ms from start")
+            }
+
+        println("-".repeat(50))
+
+        val startTime3 = currentTime
+        (1..3).asFlow()
+            .onEach { delay(100) }
+            .flatMapLatest { requestFlow(it) }
+            .collect { value ->
+                println("flatMapLatest: $value collected ${currentTime - startTime3} ms from start")
+            }
+    }
 }

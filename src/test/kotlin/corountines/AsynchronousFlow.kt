@@ -235,11 +235,41 @@ class AsynchronousFlow {
 
         val time = currentTime
         simple().collectLatest { value ->
-                println("Collecting $value")
-                delay(300) // While suspended, if a new value is emitted, then the current value collection
-                                        // execution is cancelled
-                println("Collected indeed $value")
-            }
+            println("Collecting $value")
+            delay(300) // While suspended, if a new value is emitted, then the current value collection
+            // execution is cancelled
+            println("Collected indeed $value")
+        }
         println("Collected in ${currentTime - time} ms")
+    }
+
+    @Test
+    fun composeFlowsWithZip() = runTest {
+        val nums = (1..3).asFlow()
+        val strings = flowOf("one", "two", "three")
+        nums.zip(strings) { a, b ->
+            "$a -> $b"
+        }.collect { value -> println(value) }
+    }
+
+    @Test
+    fun composeFlowsWithCombine() = runTest {
+        println("When both values are match in order:")
+        val startTime = currentTime
+        val nums = (1..3).asFlow().onEach { delay(300) }
+        val strings = flowOf("one", "two", "three").onEach { delay(400) }
+        nums.zip(strings) { a, b ->
+            "$a -> $b"
+        }.collect { value ->
+            println("with zip: '$value' at ${currentTime - startTime} ms from start")
+        }
+        println("-".repeat(50))
+        println("When any value is emitted:")
+        val startTime2 = currentTime
+        nums.combine(strings) { a, b ->
+            "$a -> $b"
+        }.collect { value ->
+            println("with combine: '$value' at ${currentTime - startTime2} ms from start")
+        }
     }
 }

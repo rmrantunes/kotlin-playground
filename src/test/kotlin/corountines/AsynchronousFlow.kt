@@ -282,32 +282,23 @@ class AsynchronousFlow {
         }
 
         val startTime = currentTime
-        (1..3).asFlow()
-            .onEach { delay(100) }
-            .flatMapConcat { requestFlow(it) }
-            .collect { value ->
-                println("flatMapConcat: $value collected ${currentTime - startTime} ms from start")
-            }
+        (1..3).asFlow().onEach { delay(100) }.flatMapConcat { requestFlow(it) }.collect { value ->
+            println("flatMapConcat: $value collected ${currentTime - startTime} ms from start")
+        }
 
         println("-".repeat(50))
 
         val startTime2 = currentTime
-        (1..3).asFlow()
-            .onEach { delay(100) }
-            .flatMapMerge { requestFlow(it) }
-            .collect { value ->
-                println("flatMapMerge: $value collected ${currentTime - startTime2} ms from start")
-            }
+        (1..3).asFlow().onEach { delay(100) }.flatMapMerge { requestFlow(it) }.collect { value ->
+            println("flatMapMerge: $value collected ${currentTime - startTime2} ms from start")
+        }
 
         println("-".repeat(50))
 
         val startTime3 = currentTime
-        (1..3).asFlow()
-            .onEach { delay(100) }
-            .flatMapLatest { requestFlow(it) }
-            .collect { value ->
-                println("flatMapLatest: $value collected ${currentTime - startTime3} ms from start")
-            }
+        (1..3).asFlow().onEach { delay(100) }.flatMapLatest { requestFlow(it) }.collect { value ->
+            println("flatMapLatest: $value collected ${currentTime - startTime3} ms from start")
+        }
     }
 
     @Test
@@ -359,8 +350,7 @@ class AsynchronousFlow {
             }
         }
 
-        simple()
-            .catch { e -> println("Caught $e") } // Does not catch downstream exceptions
+        simple().catch { e -> println("Caught $e") } // Does not catch downstream exceptions
             .collect { value ->
                 check(value > 1) { "Collected $value" }
                 println(value)
@@ -376,13 +366,10 @@ class AsynchronousFlow {
             }
         }
 
-        simple()
-            .onEach { value ->
-                check(value <= 1) { "Collected $value" }
-                println(value)
-            }
-            .catch { e -> println("Caught $e") }
-            .collect()
+        simple().onEach { value ->
+            check(value <= 1) { "Collected $value" }
+            println(value)
+        }.catch { e -> println("Caught $e") }.collect()
     }
 
     @Test
@@ -390,8 +377,7 @@ class AsynchronousFlow {
         fun simple() = (1..3).asFlow()
 
         try {
-            simple()
-                .collect { value -> println(value) }
+            simple().collect { value -> println(value) }
         } finally {
             println("Done")
         }
@@ -405,13 +391,63 @@ class AsynchronousFlow {
             throw RuntimeException()
         }
 
-        simple()
-            .onCompletion { println("Done") }
-            .collect { value -> println(value) }
+        simple().onCompletion { println("Done") }.collect { value -> println(value) }
 
-        simpleWithException()
-            .onCompletion { cause -> if (cause != null) println("Flow completed exceptionally") }
-            .catch { e -> println("Caught $e") }
-            .collect { value -> println(value) }
+        simpleWithException().onCompletion { cause -> if (cause != null) println("Flow completed exceptionally") }
+            .catch { e -> println("Caught $e") }.collect { value -> println(value) }
+    }
+
+    @Test
+    fun launchingFlow() = runTest {
+        fun events(): Flow<Int> = (1..3).asFlow().onEach { delay(100) }
+
+        events().onEach { value -> println("Event: $value") }.collect() // <- awaits for completion
+
+        println("Done. I waited")
+
+        events().onEach { value -> println("Event in coroutine: $value") }
+            .launchIn(this) // <- collects in a new coroutine
+
+        println("Done too. I ain't waiting")
+    }
+
+    @Test
+    fun flowCancellationChecks1() = runTest {
+        fun builderFlow(): Flow<Int> = flow {
+            for (i in 1..5) {
+                println("Emitting $i")
+                emit(i)
+            }
+        }
+
+        builderFlow()
+            .collect { value ->
+                if (value == 3) cancel()
+                println(value)
+            }
+    }
+
+    @Test
+    fun flowCancellationChecks2() = runTest {
+        // most other flow operators (such as IntRange.asFlow()) do not do additional cancellation checks on their own
+        // for performance reasons
+        fun intRangeFlow() = (1..5).asFlow()
+        intRangeFlow()
+            .collect { value ->
+            if (value == 3) cancel()
+            println(value)
+        }
+    }
+
+    @Test
+    fun flowCancellationChecks3() = runTest {
+        // To make it work you can add `.onEach { currentCoroutineContext().ensureActive() }` or `.cancellable()`
+        fun intRangeFlow() = (1..5).asFlow()
+        intRangeFlow()
+            .cancellable()
+            .collect { value ->
+                if (value == 3) cancel()
+                println(value)
+            }
     }
 }

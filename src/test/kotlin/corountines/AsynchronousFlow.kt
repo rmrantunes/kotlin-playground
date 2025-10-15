@@ -286,8 +286,8 @@ class AsynchronousFlow {
             .onEach { delay(100) }
             .flatMapConcat { requestFlow(it) }
             .collect { value ->
-            println("flatMapConcat: $value collected ${currentTime - startTime} ms from start")
-        }
+                println("flatMapConcat: $value collected ${currentTime - startTime} ms from start")
+            }
 
         println("-".repeat(50))
 
@@ -308,5 +308,80 @@ class AsynchronousFlow {
             .collect { value ->
                 println("flatMapLatest: $value collected ${currentTime - startTime3} ms from start")
             }
+    }
+
+    @Test
+    fun collectorTryAndCatch() = runTest {
+        fun simple() = flow {
+            for (i in 1..3) {
+                println("Emitting $i")
+                emit(i)
+            }
+        }
+
+        try {
+            simple().collect { value ->
+                println(value)
+                check(value <= 1) { "Collected $value" }
+            }
+        } catch (e: Throwable) {
+            println("Caught $e")
+        }
+    }
+
+    @Test
+    fun everythingIsCaught() = runTest {
+        fun simple(): Flow<String> = flow {
+            for (i in 1..3) {
+                println("Emitting $i")
+                emit(i)
+            }
+        }.map { value ->
+            check(value <= 1) { "Collected $value" }
+            "string $value"
+        }
+
+        try {
+            simple().collect { value ->
+                println(value)
+            }
+        } catch (e: Throwable) {
+            println("Caught $e")
+        }
+    }
+
+    @Test
+    fun transparentCatch() = runTest {
+        fun simple() = flow {
+            for (i in 1..3) {
+                println("Emitting $i")
+                emit(i)
+            }
+        }
+
+        simple()
+            .catch { e -> println("Caught $e") } // Does not catch downstream exceptions
+            .collect { value ->
+                check(value > 1) { "Collected $value" }
+                println(value)
+            }
+    }
+
+    @Test
+    fun catchingDeclaratively() = runTest {
+        fun simple() = flow {
+            for (i in 1..3) {
+                println("Emitting $i")
+                emit(i)
+            }
+        }
+
+        simple()
+            .onEach { value ->
+                check(value <= 1) { "Collected $value" }
+                println(value)
+            }
+            .catch { e -> println("Caught $e") }
+            .collect()
     }
 }

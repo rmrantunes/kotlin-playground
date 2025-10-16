@@ -1,5 +1,6 @@
 plugins {
     kotlin("jvm") version "2.1.20"
+    id("com.diffplug.spotless") version "7.2.1"
 }
 
 group = "org.example"
@@ -18,6 +19,14 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
 }
+
+spotless {
+    kotlin {
+        ktfmt("0.58").kotlinlangStyle()
+    }
+}
+
+
 kotlin {
     jvmToolchain(21)
 }

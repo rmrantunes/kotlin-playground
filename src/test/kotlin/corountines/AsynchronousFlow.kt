@@ -1,6 +1,8 @@
 package org.example.corountines
 
+import kotlin.random.Random
 import kotlin.test.Test
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.test.currentTime
@@ -485,9 +487,34 @@ class AsynchronousFlow {
             val timestamp: Long,
         )
 
+        fun randomTemperature(base: Double = 60.0): Double {
+            return base + Random.nextDouble(-10.0, 20.0)
+        }
+
+        fun sensorFlow(sensorId: String): Flow<SensorReading> = flow {
+            while (true) {
+                delay(Random.nextLong(100, 1000))
+                emit(
+                    SensorReading(
+                        sensorId = sensorId,
+                        temperature = randomTemperature(),
+                        timestamp = System.currentTimeMillis(),
+                    )
+                )
+            }
+        }
+
         suspend fun monitorSensors(readings: Flow<SensorReading>): Flow<String> = coroutineScope {
-            val meanReadingsQuantity = 5
+            data class SensorLog(
+                val sensorId: String,
+                val type: String = "NONE",
+                val message: String = "",
+                val timestamp: Long = System.currentTimeMillis(),
+            )
+
+            val averageReadingsQuantity = 5
             val map = mutableMapOf<String, MutableList<SensorReading>>()
+            val lastLog = mutableMapOf<String, SensorLog>()
 
             readings
                 .onEach {
@@ -496,34 +523,51 @@ class AsynchronousFlow {
                 }
                 .map { reading ->
                     val sensorReadings = map[reading.sensorId]
-                    if (sensorReadings?.size?.rem(meanReadingsQuantity) == 0) {
+                    if (sensorReadings?.size?.rem(averageReadingsQuantity) == 0) {
                         sensorReadings
-                            .takeLast(meanReadingsQuantity)
+                            .takeLast(averageReadingsQuantity)
                             .sumOf { rec -> rec.temperature }
                             .let { sum ->
-                                val mean = sum / meanReadingsQuantity
-                                if (sum / meanReadingsQuantity > 70.0)
-                                    return@map "🔥 Média alta: Sensor ${reading.sensorId} média=${mean}°C"
+                                val average = sum / averageReadingsQuantity
+                                if (sum / averageReadingsQuantity > 70.0)
+                                    return@map SensorLog(
+                                        reading.sensorId,
+                                        "HEAT_LV1_AVERAGE",
+                                        "${reading.timestamp} - 🔥 Média alta: Sensor ${reading.sensorId} média de ${average}°C",
+                                    )
                             }
                     }
 
                     if (reading.temperature >= 75.0)
-                        "⚠\uFE0F Alerta: Sensor ${reading.sensorId} com ${reading.temperature}°C às ${reading.timestamp}\""
-                    else ""
+                        SensorLog(
+                            reading.sensorId,
+                            "HEAT_LV2",
+                            message =
+                                "${reading.timestamp} - ⚠\uFE0F Alerta: Sensor ${reading.sensorId} com ${reading.temperature}°C",
+                        )
+                    else SensorLog(reading.sensorId)
                 }
-                .filter { it.isNotEmpty() }
+                .filter {
+                    it.type != "NONE" &&
+                        (it.type != lastLog[it.sensorId]?.type ||
+                            it.timestamp - (lastLog[it.sensorId]?.timestamp ?: 0) >= 2_000)
+                }
+                .onEach { lastLog[it.sensorId] = it }
+                .map { it.message }
         }
 
-        val readings = flow {
-            emit(SensorReading("A1", 60.0, 1))
-            emit(SensorReading("A1", 78.5, 2))
-            emit(SensorReading("A1", 79.0, 3))
-            emit(SensorReading("A1", 71.0, 4))
-            emit(SensorReading("A1", 73.0, 5))
-            emit(SensorReading("A1", 74.0, 6))
-            emit(SensorReading("A1", 74.0, 7))
-        }
+        val sensors = listOf("A1", "B2", "C3")
+        val readings = sensors.asFlow().flatMapMerge { sensorFlow(it) }
+        val startTime = currentTime
 
-        monitorSensors(readings).collect { println(it) }
+        val job = launch {
+            monitorSensors(readings)
+                .onEach { println("[${currentTime - startTime}ms] $it") }
+                .catch { e -> println("Caught $e") }
+                .collect()
+        }
+        delay(20.seconds)
+        job.cancelAndJoin()
+        println("✅ Monitoramento encerrado.")
     }
 }

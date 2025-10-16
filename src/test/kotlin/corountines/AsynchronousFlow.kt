@@ -491,6 +491,9 @@ class AsynchronousFlow {
             return base + Random.nextDouble(-10.0, 20.0)
         }
 
+
+        fun getCurrentTime ()  = currentTime
+
         fun sensorFlow(sensorId: String): Flow<SensorReading> = flow {
             while (true) {
                 delay(Random.nextLong(100, 1000))
@@ -498,76 +501,71 @@ class AsynchronousFlow {
                     SensorReading(
                         sensorId = sensorId,
                         temperature = randomTemperature(),
-                        timestamp = System.currentTimeMillis(),
+                        timestamp = getCurrentTime(),
                     )
                 )
             }
         }
 
-        suspend fun monitorSensors(readings: Flow<SensorReading>): Flow<String> = coroutineScope {
+        suspend fun monitorSensors(readings: Flow<SensorReading>): Flow<String> {
+            val ALERT_COOLDOWN_MS = 10_000L
             data class SensorLog(
                 val sensorId: String,
                 val type: String = "NONE",
                 val message: String = "",
-                val timestamp: Long = System.currentTimeMillis(),
+                val timestamp: Long = getCurrentTime(),
             )
 
             val averageReadingsQuantity = 5
             val map = mutableMapOf<String, MutableList<SensorReading>>()
             val lastLog = mutableMapOf<String, SensorLog>()
 
-            readings
-                .onEach {
-                    if (map[it.sensorId] != null) map[it.sensorId]?.add(it)
-                    else map[it.sensorId] = mutableListOf(it)
-                }
-                .map { reading ->
-                    val sensorReadings = map[reading.sensorId]
-                    if (sensorReadings?.size?.rem(averageReadingsQuantity) == 0) {
-                        sensorReadings
-                            .takeLast(averageReadingsQuantity)
-                            .sumOf { rec -> rec.temperature }
-                            .let { sum ->
-                                val average = sum / averageReadingsQuantity
-                                if (sum / averageReadingsQuantity > 70.0)
-                                    return@map SensorLog(
-                                        reading.sensorId,
-                                        "HEAT_LV1_AVERAGE",
-                                        "${reading.timestamp} - 🔥 Média alta: Sensor ${reading.sensorId} média de ${average}°C",
-                                    )
-                            }
+            return readings
+                .onEach { map.getOrPut(it.sensorId) { mutableListOf() }.add(it) }
+                .transform { reading ->
+                    val sensorReadings = map[reading.sensorId]!!
+                    val last = lastLog[reading.sensorId]
+
+                    val isCooldownOff =
+                        last == null ||
+                            getCurrentTime() - last.timestamp >= ALERT_COOLDOWN_MS
+
+                    if (isCooldownOff && reading.temperature >= 75.0) {
+                        val message =
+                            "⚠️ Alerta: Sensor ${reading.sensorId} com %.1f°C"
+                                .format(reading.temperature)
+                        lastLog[reading.sensorId] = SensorLog(reading.sensorId, "HEAT_LV2", message)
+                        emit(message)
                     }
 
-                    if (reading.temperature >= 75.0)
-                        SensorLog(
-                            reading.sensorId,
-                            "HEAT_LV2",
-                            message =
-                                "${reading.timestamp} - ⚠\uFE0F Alerta: Sensor ${reading.sensorId} com ${reading.temperature}°C",
-                        )
-                    else SensorLog(reading.sensorId)
+                    val recent =
+                        sensorReadings.sortedBy { it.timestamp }.takeLast(averageReadingsQuantity)
+                    if (recent.size == averageReadingsQuantity) {
+                        val avg = recent.map { it.temperature }.average()
+                        if (isCooldownOff && avg > 70.0) {
+                            val message =
+                                "🔥 Média alta: Sensor ${reading.sensorId} média de %.1f°C"
+                                    .format(avg)
+                            lastLog[reading.sensorId] =
+                                SensorLog(reading.sensorId, "HEAT_LV1_AVERAGE", message)
+                            emit(message)
+                        }
+                    }
                 }
-                .filter {
-                    it.type != "NONE" &&
-                        (it.type != lastLog[it.sensorId]?.type ||
-                            it.timestamp - (lastLog[it.sensorId]?.timestamp ?: 0) >= 2_000)
-                }
-                .onEach { lastLog[it.sensorId] = it }
-                .map { it.message }
         }
 
         val sensors = listOf("A1", "B2", "C3")
         val readings = sensors.asFlow().flatMapMerge { sensorFlow(it) }
-        val startTime = currentTime
+        val startTime = getCurrentTime()
 
         val job = launch {
             monitorSensors(readings)
-                .onEach { println("[${currentTime - startTime}ms] $it") }
+                .onEach { println("[${getCurrentTime() - startTime}ms] $it") }
                 .catch { e -> println("Caught $e") }
                 .collect()
         }
-        delay(20.seconds)
+        delay(50.seconds)
         job.cancelAndJoin()
-        println("✅ Monitoramento encerrado.")
+        println("[${getCurrentTime() - startTime}ms] ✅ Monitoramento encerrado.")
     }
 }

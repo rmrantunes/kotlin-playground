@@ -1,10 +1,10 @@
 package org.example.corountines
 
+import kotlin.test.Test
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AsynchronousFlow {
@@ -449,5 +449,56 @@ class AsynchronousFlow {
                 if (value == 3) cancel()
                 println(value)
             }
+    }
+
+    @OptIn(FlowPreview::class)
+    @Test
+    fun sensorReadingChallenge() = runTest {
+        data class SensorReading(
+            val sensorId: String,
+            val temperature: Double,
+            val timestamp: Long,
+        )
+
+        suspend fun monitorSensors(readings: Flow<SensorReading>): Flow<String> = coroutineScope {
+            val meanReadingsQuantity = 5
+            val map = mutableMapOf<String, MutableList<SensorReading>>()
+
+            readings
+                .onEach {
+                    if (map[it.sensorId] != null) map[it.sensorId]?.add(it)
+                    else map[it.sensorId] = mutableListOf(it)
+                }
+                .map { reading ->
+                    val sensorReadings = map[reading.sensorId]
+                    if (sensorReadings?.size?.rem(meanReadingsQuantity) == 0) {
+                        sensorReadings
+                            .takeLast(meanReadingsQuantity)
+                            .sumOf { rec -> rec.temperature }
+                            .let { sum ->
+                                val mean = sum / meanReadingsQuantity
+                                if (sum / meanReadingsQuantity > 70.0)
+                                    return@map "🔥 Média alta: Sensor ${reading.sensorId} média=${mean}°C"
+                            }
+                    }
+
+                    if (reading.temperature >= 75.0)
+                        "⚠\uFE0F Alerta: Sensor ${reading.sensorId} com ${reading.temperature}°C às ${reading.timestamp}\""
+                    else ""
+                }
+                .filter { it.isNotEmpty() }
+        }
+
+        val readings = flow {
+            emit(SensorReading("A1", 60.0, 1))
+            emit(SensorReading("A1", 78.5, 2))
+            emit(SensorReading("A1", 79.0, 3))
+            emit(SensorReading("A1", 71.0, 4))
+            emit(SensorReading("A1", 73.0, 5))
+            emit(SensorReading("A1", 74.0, 6))
+            emit(SensorReading("A1", 74.0, 7))
+        }
+
+        monitorSensors(readings).collect { println(it) }
     }
 }

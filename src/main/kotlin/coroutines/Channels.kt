@@ -3,13 +3,18 @@ package org.example.coroutines
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.channels.toList
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class Item(val name: String, val price: Double)
 
@@ -112,6 +117,41 @@ class OrderProcessingChallenge {
         println(
             "Processing order ${order.id}: Total without discount: %.2f - $discountText"
                 .format(totalPrice)
+        )
+    }
+}
+
+// --- DATA ---
+enum class OrderSide {
+    BUY,
+    SELL,
+}
+
+data class MarketTick(
+    val symbol: String,
+    val price: Double,
+    val side: OrderSide,
+    val timestamp: Long = System.currentTimeMillis(),
+)
+
+class StockMarketRouterChallenge {
+    private val symbols = listOf("AAPL", "MSFT", "GOOGL", "TSLA", "NVDA")
+    private val processedCount = AtomicInteger(0)
+    private val droppedCount = AtomicInteger(0)
+    private val restartCount = AtomicInteger(0)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    suspend fun execute() = coroutineScope {
+        withTimeoutOrNull(10_000) {
+            val marketFeedChannel = produce { repeat(1000) { send(generateTick()) } }
+        }
+    }
+
+    private fun generateTick(): MarketTick {
+        return MarketTick(
+            symbol = symbols.random(),
+            price = Random.nextDouble(100.0, 1000.0),
+            side = if (Random.nextBoolean()) OrderSide.BUY else OrderSide.SELL,
         )
     }
 }

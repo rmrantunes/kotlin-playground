@@ -38,7 +38,7 @@ class OrderProcessingChallenge {
     suspend fun execute() = coroutineScope {
         val channel = Channel<Order>()
 
-        val job = launch {
+        val producerJob = launch {
             repeat(10) {
                 launch {
                     delay(Random.nextLong(100, 500))
@@ -47,14 +47,15 @@ class OrderProcessingChallenge {
             }
         }
 
-        launch {
+        val processorsJob = launch {
             for (order in channel) {
                 processOrder(order)
             }
         }
 
-        job.join()
+        producerJob.join()
         channel.close()
+        processorsJob.join()
     }
 
     private fun generateItem(): Item {
@@ -73,14 +74,13 @@ class OrderProcessingChallenge {
     private fun processOrder(order: Order) {
         val totalPrice = order.items.sumOf { it.price }
         val isEligibleForDiscount = totalPrice > 200.0
-        val discountText = buildString {
+        val discountedPrice = totalPrice * 0.9
+        val discountText =
             if (!isEligibleForDiscount) {
-                append("No discount applied")
+                "No discount applied"
             } else {
-                val discountedPrice = totalPrice * 0.9
-                append("With discount: %.2f".format(discountedPrice))
+                "With discount: %.2f".format(discountedPrice)
             }
-        }
         println(
             "Processing order ${order.id}: Total without discount: %.2f - $discountText"
                 .format(totalPrice)

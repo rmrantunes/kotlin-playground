@@ -2,9 +2,13 @@ package org.example.coroutines
 
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.toList
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 
 data class Item(val name: String, val price: Double)
@@ -36,26 +40,50 @@ class OrderProcessingChallenge {
     private val atomicInteger = AtomicInteger(0)
 
     suspend fun execute() = coroutineScope {
-        val channel = Channel<Order>()
+        val dataChannel = Channel<Order>(16)
+        val errorChannel = Channel<Throwable>(Channel.UNLIMITED)
 
-        val producerJob = launch {
-            repeat(10) {
-                launch {
-                    delay(Random.nextLong(100, 500))
-                    channel.send(generateOrder())
-                }
+        val producerSupervisor = SupervisorJob()
+        val producerScope = CoroutineScope(coroutineContext + producerSupervisor)
+        val producerJob =
+            producerScope.launch {
+                buildList {
+                        repeat(10) {
+                            add(
+                                producerScope.launch {
+                                    try {
+                                        delay(Random.nextLong(100, 500))
+                                        dataChannel.send(generateOrder())
+                                    } catch (e: Throwable) {
+                                        errorChannel.send(e)
+                                        throw e
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    .joinAll()
             }
-        }
 
         val processorsJob = launch {
-            for (order in channel) {
-                processOrder(order)
+            try {
+                for (order in dataChannel) {
+                    processOrder(order)
+                }
+            } catch (e: Throwable) {
+                errorChannel.send(e)
+                throw e
             }
         }
 
         producerJob.join()
-        channel.close()
+        dataChannel.close()
         processorsJob.join()
+        errorChannel.close()
+
+        errorChannel.toList().firstOrNull()?.let { throw it }
+
+        println("All orders processed")
     }
 
     private fun generateItem(): Item {

@@ -5,15 +5,15 @@ import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.channels.toList
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.selects.select
-import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 
 data class Item(val name: String, val price: Double)
@@ -127,6 +127,12 @@ enum class OrderSide {
     SELL,
 }
 
+enum class EngineSpeed {
+    FAST,
+    MEDIUM,
+    SLOW,
+}
+
 data class MarketTick(
     val symbol: String,
     val price: Double,
@@ -144,6 +150,58 @@ class StockMarketRouterChallenge {
     suspend fun execute() = coroutineScope {
         withTimeoutOrNull(10_000) {
             val marketFeedChannel = produce { repeat(1000) { send(generateTick()) } }
+            val highPriority =
+                Channel<MarketTick>(64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+            val lowPriority = Channel<MarketTick>(32, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+            router(marketFeedChannel, highPriority, lowPriority)
+        }
+    }
+
+    private suspend fun router(
+        marketFeedChannel: ReceiveChannel<MarketTick>,
+        highPriority: Channel<MarketTick>,
+        lowPriority: Channel<MarketTick>,
+    ) = coroutineScope {
+        launch {
+            for (marketTick in marketFeedChannel) {
+                if (marketTick.side == OrderSide.BUY) highPriority.send(marketTick)
+                else lowPriority.send(marketTick)
+            }
+        }
+    }
+
+    private suspend fun generateEngine(
+        engineSpeed: EngineSpeed,
+        highPriority: Channel<MarketTick>,
+        lowPriority: Channel<MarketTick>,
+    ) = coroutineScope {
+        val isSlow = engineSpeed == EngineSpeed.SLOW
+        val delayTime =
+            when (engineSpeed) {
+                EngineSpeed.FAST -> Random.nextLong(10, 50)
+                EngineSpeed.MEDIUM -> Random.nextLong(50, 150)
+                EngineSpeed.SLOW -> Random.nextLong(200, 300)
+            }
+
+        fun jeopardizeCrash() {
+            if (Random.nextInt(1, 100) > 95) throw RuntimeException("Too much, baby")
+        }
+
+        launch {
+            for (tick in highPriority) {
+                delay(delayTime)
+                if (isSlow) jeopardizeCrash()
+                print("${tick.symbol} ")
+            }
+        }
+
+        launch {
+            for (tick in lowPriority) {
+                delay(delayTime)
+                if (isSlow) jeopardizeCrash()
+                print("${tick.symbol} ")
+            }
         }
     }
 

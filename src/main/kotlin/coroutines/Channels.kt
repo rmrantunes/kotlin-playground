@@ -49,7 +49,7 @@ class OrderProcessingChallenge {
 
         launch {
             for (order in channel) {
-                println(order)
+                processOrder(order)
             }
         }
 
@@ -68,5 +68,19 @@ class OrderProcessingChallenge {
         val id = atomicInteger.incrementAndGet()
         val items = buildList { repeat(Random.nextInt(2, 5)) { add(generateItem()) } }
         return Order(id, items)
+    }
+
+    private fun processOrder(order: Order) {
+        val totalPrice = order.items.sumOf { it.price }
+        val isEligibleForDiscount = totalPrice > 200.0
+        val discountText = buildString {
+            if(!isEligibleForDiscount) {
+                append("No discount applied")
+            } else {
+                val discountedPrice = totalPrice * 0.9
+                append("With discount: %.2f".format(discountedPrice))
+            }
+        }
+        println("Processing order ${order.id}: Total without discount: %.2f - $discountText".format(totalPrice))
     }
 }

@@ -155,6 +155,8 @@ class StockMarketRouterChallenge {
             val lowPriority = Channel<MarketTick>(32, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
             router(marketFeedChannel, highPriority, lowPriority)
+
+            launch { engineManager(highPriority, lowPriority) }
         }
     }
 
@@ -171,7 +173,28 @@ class StockMarketRouterChallenge {
         }
     }
 
+    private suspend fun engineManager(
+        highPriority: Channel<MarketTick>,
+        lowPriority: Channel<MarketTick>,
+    ) = coroutineScope {
+        val job = SupervisorJob()
+        val supervisorScope = CoroutineScope(coroutineContext + job)
+
+        fun launchEngine(speed: EngineSpeed) =
+            supervisorScope.launch {
+                try {
+                    generateEngine(supervisorScope, speed, highPriority, lowPriority)
+                } catch (e: Exception) {
+                    // launchEngine(speed)
+                    println("Exception while launching engine: $e")
+                }
+            }
+
+        EngineSpeed.entries.map { speed -> launchEngine(speed) }.joinAll()
+    }
+
     private suspend fun generateEngine(
+        supervisorScope: CoroutineScope,
         engineSpeed: EngineSpeed,
         highPriority: Channel<MarketTick>,
         lowPriority: Channel<MarketTick>,
@@ -185,24 +208,32 @@ class StockMarketRouterChallenge {
             }
 
         fun jeopardizeCrash() {
-            if (Random.nextInt(1, 100) > 95) throw RuntimeException("Too much, baby")
+            if (Random.nextInt(1, 100) > 2) throw RuntimeException("Too much, baby")
         }
 
-        launch {
-            for (tick in highPriority) {
-                delay(delayTime)
-                if (isSlow) jeopardizeCrash()
-                print("${tick.symbol} ")
-            }
-        }
+        buildList {
+            add(
+                supervisorScope.launch {
+                    for (tick in highPriority) {
+                        delay(delayTime)
+                        if (isSlow) jeopardizeCrash()
+                        println("[$engineSpeed] - ${tick.side} ${tick.symbol} ${tick.price}")
+                        processedCount.incrementAndGet()
+                    }
+                }
+            )
 
-        launch {
-            for (tick in lowPriority) {
-                delay(delayTime)
-                if (isSlow) jeopardizeCrash()
-                print("${tick.symbol} ")
-            }
-        }
+            add(
+                supervisorScope.launch {
+                    for (tick in lowPriority) {
+                        delay(delayTime)
+                        if (isSlow) jeopardizeCrash()
+                        println("[$engineSpeed] - ${tick.side} ${tick.symbol} ${tick.price}")
+                        processedCount.incrementAndGet()
+                    }
+                }
+            )
+        }.joinAll()
     }
 
     private fun generateTick(): MarketTick {

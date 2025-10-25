@@ -12,8 +12,10 @@ import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.channels.toList
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 
 data class Item(val name: String, val price: Double)
@@ -145,30 +147,42 @@ class StockMarketRouterChallenge {
     private val processedCount = AtomicInteger(0)
     private val droppedCount = AtomicInteger(0)
     private val restartCount = AtomicInteger(0)
+    private val count = AtomicInteger(0)
+    private val count2 = AtomicInteger(0)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun execute() = coroutineScope {
         withTimeoutOrNull(10_000) {
-            val marketFeedChannel = produce { repeat(1000) { send(generateTick()) } }
+            // TickGenerator
+            val marketFeedChannel = produce {
+                while (true) {
+                    repeat(350) { send(generateTick()) }
+                    delay(333L)
+                }
+            }
             val highPriority =
                 Channel<MarketTick>(64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
             val lowPriority = Channel<MarketTick>(32, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
-            router(marketFeedChannel, highPriority, lowPriority)
+            // PriorityRouter
+            launch {
+                for (marketTick in marketFeedChannel) {
+                    if (marketTick.side == OrderSide.BUY) highPriority.send(marketTick)
+                    else lowPriority.send(marketTick)
+                }
+            }
 
-            launch { engineManager(highPriority, lowPriority) }
-        }
-    }
-
-    private suspend fun router(
-        marketFeedChannel: ReceiveChannel<MarketTick>,
-        highPriority: Channel<MarketTick>,
-        lowPriority: Channel<MarketTick>,
-    ) = coroutineScope {
-        launch {
-            for (marketTick in marketFeedChannel) {
-                if (marketTick.side == OrderSide.BUY) highPriority.send(marketTick)
-                else lowPriority.send(marketTick)
+            launch {
+                while (isActive) {
+                    select {
+                        highPriority.onReceive {
+                            println("Received $it / ${count.incrementAndGet()}")
+                        }
+                        lowPriority.onReceive {
+                            println("Received $it / ${count.incrementAndGet()}")
+                        }
+                    }
+                }
             }
         }
     }
@@ -196,7 +210,7 @@ class StockMarketRouterChallenge {
     private suspend fun generateEngine(
         supervisorScope: CoroutineScope,
         engineSpeed: EngineSpeed,
-        highPriority: Channel<MarketTick>,
+        channel: Channel<MarketTick>,
         lowPriority: Channel<MarketTick>,
     ) = coroutineScope {
         val isSlow = engineSpeed == EngineSpeed.SLOW
@@ -211,29 +225,14 @@ class StockMarketRouterChallenge {
             if (Random.nextInt(1, 100) > 2) throw RuntimeException("Too much, baby")
         }
 
-        buildList {
-            add(
-                supervisorScope.launch {
-                    for (tick in highPriority) {
-                        delay(delayTime)
-                        if (isSlow) jeopardizeCrash()
-                        println("[$engineSpeed] - ${tick.side} ${tick.symbol} ${tick.price}")
-                        processedCount.incrementAndGet()
-                    }
-                }
-            )
-
-            add(
-                supervisorScope.launch {
-                    for (tick in lowPriority) {
-                        delay(delayTime)
-                        if (isSlow) jeopardizeCrash()
-                        println("[$engineSpeed] - ${tick.side} ${tick.symbol} ${tick.price}")
-                        processedCount.incrementAndGet()
-                    }
-                }
-            )
-        }.joinAll()
+        supervisorScope.launch {
+            for (tick in channel) {
+                delay(delayTime)
+                // if (isSlow) jeopardizeCrash()
+                println("[$engineSpeed] - ${tick.side} ${tick.symbol} ${tick.price}")
+                processedCount.incrementAndGet()
+            }
+        }
     }
 
     private fun generateTick(): MarketTick {

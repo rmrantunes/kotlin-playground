@@ -4,14 +4,18 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.channels.toList
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -136,6 +140,7 @@ enum class EngineSpeed {
 }
 
 data class MarketTick(
+    val id: Int,
     val symbol: String,
     val price: Double,
     val side: OrderSide,
@@ -144,6 +149,7 @@ data class MarketTick(
 
 class StockMarketRouterChallenge {
     private val symbols = listOf("AAPL", "MSFT", "GOOGL", "TSLA", "NVDA")
+    private val idGenerator = AtomicInteger(0)
     private val processedCount = AtomicInteger(0)
     private val droppedCount = AtomicInteger(0)
     private val restartCount = AtomicInteger(0)
@@ -155,14 +161,16 @@ class StockMarketRouterChallenge {
         withTimeoutOrNull(10_000) {
             // TickGenerator
             val marketFeedChannel = produce {
-                while (true) {
-                    repeat(350) { send(generateTick()) }
-                    delay(333L)
+                while (isActive) {
+                    repeat(1) { send(generateTick()) }
+                    delay(1)
                 }
             }
             val highPriority =
                 Channel<MarketTick>(64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
-            val lowPriority = Channel<MarketTick>(32, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+            val lowPriority = Channel<MarketTick>(64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+            val routerFlow =
+                MutableSharedFlow<MarketTick>(1, 9, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
             // PriorityRouter
             launch {
@@ -175,61 +183,63 @@ class StockMarketRouterChallenge {
             launch {
                 while (isActive) {
                     select {
-                        highPriority.onReceive {
-                            println("Received $it / ${count.incrementAndGet()}")
-                        }
-                        lowPriority.onReceive {
-                            println("Received $it / ${count.incrementAndGet()}")
-                        }
+                        highPriority.onReceive { routerFlow.tryEmit(it) }
+                        lowPriority.onReceive { routerFlow.tryEmit(it) }
                     }
                 }
             }
+
+            launch { engineManager(routerFlow.asSharedFlow()) }
         }
+        println("Processed ${processedCount.get()}")
     }
 
-    private suspend fun engineManager(
-        highPriority: Channel<MarketTick>,
-        lowPriority: Channel<MarketTick>,
-    ) = coroutineScope {
+    private suspend fun engineManager(routerFlow: SharedFlow<MarketTick>) = coroutineScope {
         val job = SupervisorJob()
         val supervisorScope = CoroutineScope(coroutineContext + job)
 
-        fun launchEngine(speed: EngineSpeed) =
+        fun launchEngine(engineSpeed: EngineSpeed) =
             supervisorScope.launch {
                 try {
-                    generateEngine(supervisorScope, speed, highPriority, lowPriority)
+                    generateEngine(supervisorScope, engineSpeed, routerFlow)
                 } catch (e: Exception) {
                     // launchEngine(speed)
                     println("Exception while launching engine: $e")
                 }
             }
 
-        EngineSpeed.entries.map { speed -> launchEngine(speed) }.joinAll()
+        EngineSpeed.entries.map { speed -> launchEngine(speed) }
     }
 
-    private suspend fun generateEngine(
+    @OptIn(FlowPreview::class)
+    private fun generateEngine(
         supervisorScope: CoroutineScope,
         engineSpeed: EngineSpeed,
-        channel: Channel<MarketTick>,
-        lowPriority: Channel<MarketTick>,
-    ) = coroutineScope {
+        routerFlow: SharedFlow<MarketTick>,
+    ) {
         val isSlow = engineSpeed == EngineSpeed.SLOW
-        val delayTime =
-            when (engineSpeed) {
-                EngineSpeed.FAST -> Random.nextLong(10, 50)
-                EngineSpeed.MEDIUM -> Random.nextLong(50, 150)
-                EngineSpeed.SLOW -> Random.nextLong(200, 300)
-            }
 
         fun jeopardizeCrash() {
             if (Random.nextInt(1, 100) > 2) throw RuntimeException("Too much, baby")
         }
 
         supervisorScope.launch {
-            for (tick in channel) {
+            routerFlow.collect {
+                val delayTime =
+                    when (engineSpeed) {
+                        EngineSpeed.FAST -> Random.nextLong(10, 50)
+                        EngineSpeed.MEDIUM -> Random.nextLong(50, 150)
+                        EngineSpeed.SLOW -> Random.nextLong(200, 300)
+                    }
+
+                println("[$engineSpeed Engine starting] #${it.id} ${it.side} ${it.symbol}")
+
                 delay(delayTime)
                 // if (isSlow) jeopardizeCrash()
-                println("[$engineSpeed] - ${tick.side} ${tick.symbol} ${tick.price}")
+                println(
+                    "[$engineSpeed Engine in ${delayTime}ms] #${it.id} ${it.side} ${it.symbol} @ %.2f | ${it.timestamp}"
+                        .format(it.price)
+                )
                 processedCount.incrementAndGet()
             }
         }
@@ -237,6 +247,7 @@ class StockMarketRouterChallenge {
 
     private fun generateTick(): MarketTick {
         return MarketTick(
+            id = idGenerator.incrementAndGet(),
             symbol = symbols.random(),
             price = Random.nextDouble(100.0, 1000.0),
             side = if (Random.nextBoolean()) OrderSide.BUY else OrderSide.SELL,

@@ -179,16 +179,21 @@ class StockMarketRouterChallenge {
 
             launch { engineManager(routerFlow.asSharedFlow()) }
         }
-        println("Processed ${processedCount.get()}")
+        println("Processed: ${processedCount.get()}")
+        println("Restarted: ${restartCount.get()}")
     }
 
     private suspend fun engineManager(routerFlow: SharedFlow<MarketTick>) = coroutineScope {
         val job = SupervisorJob()
         val supervisorScope = CoroutineScope(coroutineContext + job)
 
-        fun launchEngine(engineSpeed: EngineSpeed, engineFlow: MutableSharedFlow<MarketTick>) {
+        fun launchEngine(
+            engineSpeed: EngineSpeed,
+            engineFlow: MutableSharedFlow<MarketTick>,
+            restart: Boolean = false,
+        ) {
             supervisorScope.launch {
-                routerFlow
+                val middleStageFlowJob = routerFlow
                     .filter {
                         when (engineSpeed) {
                             EngineSpeed.FAST -> it.side == OrderSide.BUY
@@ -196,15 +201,15 @@ class StockMarketRouterChallenge {
                             else -> true
                         }
                     }
-                    .collect { engineFlow.tryEmit(it) }
-            }
+                    .onEach { engineFlow.tryEmit(it) }
+                    .launchIn(this)
 
-            supervisorScope.launch {
                 try {
-                    generateEngine(supervisorScope, engineSpeed, engineFlow.asSharedFlow())
+                    generateEngine(engineSpeed, engineFlow.asSharedFlow(), restart)
                 } catch (e: Exception) {
-                    // launchEngine(speed)
                     println("Exception while launching engine: $e")
+                    middleStageFlowJob.cancel()
+                    launchEngine(engineSpeed, engineFlow, restart = true)
                 }
             }
         }
@@ -223,36 +228,43 @@ class StockMarketRouterChallenge {
     }
 
     @OptIn(FlowPreview::class)
-    private fun generateEngine(
-        supervisorScope: CoroutineScope,
+    private suspend fun generateEngine(
         engineSpeed: EngineSpeed,
         engineFlow: SharedFlow<MarketTick>,
-    ) {
+        restart: Boolean = false,
+    ) = coroutineScope {
         val isSlow = engineSpeed == EngineSpeed.SLOW
 
         fun jeopardizeCrash() {
-            if (Random.nextInt(1, 100) > 2) throw RuntimeException("Too much, baby")
+            if (Random.nextInt(1, 100) > 50) throw RuntimeException("Too much, baby")
         }
 
-        supervisorScope.launch {
-            engineFlow
-                .distinctUntilChangedBy { "${it.symbol} ${it.side}" }
-                .collect {
-                    val delayTime =
-                        when (engineSpeed) {
-                            EngineSpeed.FAST -> Random.nextLong(10, 50)
-                            EngineSpeed.MEDIUM -> Random.nextLong(50, 150)
-                            EngineSpeed.SLOW -> Random.nextLong(200, 300)
-                        }
-
-                    delay(delayTime)
-                    // if (isSlow) jeopardizeCrash()
-                    println(
-                        "[$engineSpeed Engine in ${delayTime}ms] #${it.id} ${it.side} ${it.symbol} @ %.2f | ${it.timestamp}"
-                            .format(it.price)
-                    )
-                    processedCount.incrementAndGet()
+        suspend fun process(tick: MarketTick) {
+            val delayTime =
+                when (engineSpeed) {
+                    EngineSpeed.FAST -> Random.nextLong(10, 50)
+                    EngineSpeed.MEDIUM -> Random.nextLong(50, 150)
+                    EngineSpeed.SLOW -> Random.nextLong(200, 300)
                 }
+
+            delay(delayTime)
+            if (isSlow) jeopardizeCrash()
+            println(
+                "[$engineSpeed engine] #${tick.id} ${tick.side} ${tick.symbol} @ %.2f | ${tick.timestamp}"
+                    .format(tick.price)
+            )
+            processedCount.incrementAndGet()
+        }
+
+        val cacheTick = engineFlow.replayCache.firstOrNull()
+        launch {
+            if (restart && cacheTick != null) {
+                println("[$engineSpeed engine] Restating engine...")
+                restartCount.incrementAndGet()
+                process(cacheTick)
+            }
+
+            engineFlow.distinctUntilChangedBy { "${it.symbol} ${it.side}" }.collect { process(it) }
         }
     }
 

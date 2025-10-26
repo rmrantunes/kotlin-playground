@@ -10,6 +10,7 @@ import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.channels.toList
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.selects.selectUnbiased
 
 data class Item(val name: String, val price: Double)
 
@@ -149,12 +150,13 @@ class StockMarketRouterChallenge {
             // TickGenerator
             val marketFeedChannel = produce {
                 while (isActive) {
-                    repeat(1) { send(generateTick()) }
+                    send(generateTick())
                     delay(1)
                 }
             }
 
-            launch { router(marketFeedChannel) }
+            launch { router(marketFeedChannel) }.join()
+            marketFeedChannel.cancel()
         }
 
         println("Processed: ${processedCount.get()}")
@@ -207,7 +209,7 @@ class StockMarketRouterChallenge {
 
         launch {
             while (isActive) {
-                select {
+                selectUnbiased {
                     highPriority.onReceive { routerFlow.emit(it) }
                     lowPriority.onReceive { routerFlow.emit(it) }
                 }

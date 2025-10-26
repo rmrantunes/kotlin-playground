@@ -5,6 +5,7 @@ import kotlin.random.Random
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.channels.toList
 import kotlinx.coroutines.flow.*
@@ -141,8 +142,6 @@ class StockMarketRouterChallenge {
     private val processedCount = AtomicInteger(0)
     private val droppedCount = AtomicInteger(0)
     private val restartCount = AtomicInteger(0)
-    private val count = AtomicInteger(0)
-    private val count2 = AtomicInteger(0)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun execute() = coroutineScope {
@@ -154,38 +153,22 @@ class StockMarketRouterChallenge {
                     delay(1)
                 }
             }
-            val highPriority =
-                Channel<MarketTick>(64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
-            val lowPriority = Channel<MarketTick>(64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
-            val routerFlow =
-                MutableSharedFlow<MarketTick>(1, 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
-            // PriorityRouter
-            launch {
-                for (marketTick in marketFeedChannel) {
-                    if (marketTick.side == OrderSide.BUY) highPriority.send(marketTick)
-                    else lowPriority.send(marketTick)
-                }
-            }
-
-            launch {
-                while (isActive) {
-                    select {
-                        highPriority.onReceive { routerFlow.tryEmit(it) }
-                        lowPriority.onReceive { routerFlow.tryEmit(it) }
-                    }
-                }
-            }
-
-            launch { engineManager(routerFlow.asSharedFlow()) }
+            launch { router(marketFeedChannel) }
         }
+
         println("Processed: ${processedCount.get()}")
         println("Restarted: ${restartCount.get()}")
     }
 
-    private suspend fun engineManager(routerFlow: SharedFlow<MarketTick>) = coroutineScope {
-        val job = SupervisorJob()
-        val supervisorScope = CoroutineScope(coroutineContext + job)
+    private suspend fun router(marketFeedChannel: ReceiveChannel<MarketTick>) = coroutineScope {
+        val supervisorJob = SupervisorJob()
+        val supervisorScope = CoroutineScope(coroutineContext + supervisorJob)
+
+        val routerFlow =
+            MutableSharedFlow<MarketTick>(1, 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+        val highPriority = Channel<MarketTick>(64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+        val lowPriority = Channel<MarketTick>(64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
         fun launchEngine(
             engineSpeed: EngineSpeed,
@@ -193,16 +176,17 @@ class StockMarketRouterChallenge {
             restart: Boolean = false,
         ) {
             supervisorScope.launch {
-                val middleStageFlowJob = routerFlow
-                    .filter {
-                        when (engineSpeed) {
-                            EngineSpeed.FAST -> it.side == OrderSide.BUY
-                            EngineSpeed.MEDIUM -> it.symbol == "MSFT"
-                            else -> true
+                val middleStageFlowJob =
+                    routerFlow
+                        .filter {
+                            when (engineSpeed) {
+                                EngineSpeed.FAST -> it.side == OrderSide.BUY
+                                EngineSpeed.MEDIUM -> it.symbol == "MSFT"
+                                else -> true
+                            }
                         }
-                    }
-                    .onEach { engineFlow.tryEmit(it) }
-                    .launchIn(this)
+                        .onEach { engineFlow.emit(it) }
+                        .launchIn(this)
 
                 try {
                     generateEngine(engineSpeed, engineFlow.asSharedFlow(), restart)
@@ -210,6 +194,22 @@ class StockMarketRouterChallenge {
                     println("Exception while launching engine: $e")
                     middleStageFlowJob.cancel()
                     launchEngine(engineSpeed, engineFlow, restart = true)
+                }
+            }
+        }
+
+        launch {
+            for (marketTick in marketFeedChannel) {
+                if (marketTick.side == OrderSide.BUY) highPriority.send(marketTick)
+                else lowPriority.send(marketTick)
+            }
+        }
+
+        launch {
+            while (isActive) {
+                select {
+                    highPriority.onReceive { routerFlow.emit(it) }
+                    lowPriority.onReceive { routerFlow.emit(it) }
                 }
             }
         }
@@ -236,7 +236,7 @@ class StockMarketRouterChallenge {
         val isSlow = engineSpeed == EngineSpeed.SLOW
 
         fun jeopardizeCrash() {
-            if (Random.nextInt(1, 100) > 50) throw RuntimeException("Too much, baby")
+            if (Random.nextInt(1, 100) > 95) throw RuntimeException("Too much, baby")
         }
 
         suspend fun process(tick: MarketTick) {

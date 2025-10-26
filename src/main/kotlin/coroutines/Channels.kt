@@ -2,25 +2,13 @@ package org.example.coroutines
 
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.channels.toList
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.selects.select
-import kotlinx.coroutines.withTimeoutOrNull
 
 data class Item(val name: String, val price: Double)
 
@@ -170,7 +158,7 @@ class StockMarketRouterChallenge {
                 Channel<MarketTick>(64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
             val lowPriority = Channel<MarketTick>(64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
             val routerFlow =
-                MutableSharedFlow<MarketTick>(1, 9, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+                MutableSharedFlow<MarketTick>(1, 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
             // PriorityRouter
             launch {
@@ -198,24 +186,47 @@ class StockMarketRouterChallenge {
         val job = SupervisorJob()
         val supervisorScope = CoroutineScope(coroutineContext + job)
 
-        fun launchEngine(engineSpeed: EngineSpeed) =
+        fun launchEngine(engineSpeed: EngineSpeed, engineFlow: MutableSharedFlow<MarketTick>) {
+            supervisorScope.launch {
+                routerFlow
+                    .filter {
+                        when (engineSpeed) {
+                            EngineSpeed.FAST -> it.side == OrderSide.BUY
+                            EngineSpeed.MEDIUM -> it.symbol == "MSFT"
+                            else -> true
+                        }
+                    }
+                    .collect { engineFlow.tryEmit(it) }
+            }
+
             supervisorScope.launch {
                 try {
-                    generateEngine(supervisorScope, engineSpeed, routerFlow)
+                    generateEngine(supervisorScope, engineSpeed, engineFlow.asSharedFlow())
                 } catch (e: Exception) {
                     // launchEngine(speed)
                     println("Exception while launching engine: $e")
                 }
             }
+        }
 
-        EngineSpeed.entries.map { speed -> launchEngine(speed) }
+        EngineSpeed.entries.forEach { speed ->
+            run {
+                val engineFlow =
+                    MutableSharedFlow<MarketTick>(
+                        1,
+                        64,
+                        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+                    )
+                launchEngine(speed, engineFlow)
+            }
+        }
     }
 
     @OptIn(FlowPreview::class)
     private fun generateEngine(
         supervisorScope: CoroutineScope,
         engineSpeed: EngineSpeed,
-        routerFlow: SharedFlow<MarketTick>,
+        engineFlow: SharedFlow<MarketTick>,
     ) {
         val isSlow = engineSpeed == EngineSpeed.SLOW
 
@@ -224,24 +235,24 @@ class StockMarketRouterChallenge {
         }
 
         supervisorScope.launch {
-            routerFlow.collect {
-                val delayTime =
-                    when (engineSpeed) {
-                        EngineSpeed.FAST -> Random.nextLong(10, 50)
-                        EngineSpeed.MEDIUM -> Random.nextLong(50, 150)
-                        EngineSpeed.SLOW -> Random.nextLong(200, 300)
-                    }
+            engineFlow
+                .distinctUntilChangedBy { "${it.symbol} ${it.side}" }
+                .collect {
+                    val delayTime =
+                        when (engineSpeed) {
+                            EngineSpeed.FAST -> Random.nextLong(10, 50)
+                            EngineSpeed.MEDIUM -> Random.nextLong(50, 150)
+                            EngineSpeed.SLOW -> Random.nextLong(200, 300)
+                        }
 
-                println("[$engineSpeed Engine starting] #${it.id} ${it.side} ${it.symbol}")
-
-                delay(delayTime)
-                // if (isSlow) jeopardizeCrash()
-                println(
-                    "[$engineSpeed Engine in ${delayTime}ms] #${it.id} ${it.side} ${it.symbol} @ %.2f | ${it.timestamp}"
-                        .format(it.price)
-                )
-                processedCount.incrementAndGet()
-            }
+                    delay(delayTime)
+                    // if (isSlow) jeopardizeCrash()
+                    println(
+                        "[$engineSpeed Engine in ${delayTime}ms] #${it.id} ${it.side} ${it.symbol} @ %.2f | ${it.timestamp}"
+                            .format(it.price)
+                    )
+                    processedCount.incrementAndGet()
+                }
         }
     }
 

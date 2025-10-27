@@ -279,7 +279,7 @@ class StockMarketRouterChallenge {
                 launch {
                     try {
                         engineFlow.collect { process(it) }
-                    } catch (e: RuntimeException) {
+                    } catch (e: CancellationException) {} catch (e: RuntimeException) {
                         engineRestartCount.incrementAndGet()
                         restartCount.incrementAndGet()
                         println("[$engineSpeed engine]: restarting due to: ${e.message}")

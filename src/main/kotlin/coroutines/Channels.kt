@@ -156,6 +156,7 @@ class StockMarketRouterChallenge {
 
         println("Processed: ${processedCount.get()}")
         println("Restarted: ${restartCount.get()}")
+        println("Dropped: ${droppedCount.get()}")
     }
 
     @OptIn(InternalCoroutinesApi::class)
@@ -165,8 +166,18 @@ class StockMarketRouterChallenge {
         val highPriority = Channel<MarketTick>(64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
         val lowPriority = Channel<MarketTick>(64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
-        fun launchEngine(engineSpeed: EngineSpeed, engineFlow: MutableSharedFlow<MarketTick>) {
+        fun launchEngine(engineSpeed: EngineSpeed) {
             launch {
+                val middleFlow = MutableSharedFlow<MarketTick>()
+
+                val engineFlow =
+                    channelFlow {
+                            middleFlow.collect { tick ->
+                                if (trySend(tick).isFailure) droppedCount.incrementAndGet()
+                            }
+                        }
+                        .buffer(64, BufferOverflow.DROP_OLDEST)
+
                 routerFlow
                     .filter {
                         when (engineSpeed) {
@@ -175,15 +186,19 @@ class StockMarketRouterChallenge {
                             else -> true
                         }
                     }
-                    .onEach { engineFlow.emit(it) }
+                    .onEach { middleFlow.emit(it) }
                     .launchIn(this)
 
-                generateEngine(engineSpeed, engineFlow.asSharedFlow(), onRestart = {
-                    routerFlow.replayCache.firstOrNull()?.let {
-                        println("[$engineSpeed engine] from cache $it")
-                        engineFlow.emit(it)
-                    }
-                })
+                generateEngine(
+                    engineSpeed,
+                    engineFlow,
+                    onRestart = {
+                        routerFlow.replayCache.firstOrNull()?.let {
+                            println("[$engineSpeed engine] from cache $it")
+                            middleFlow.emit(it)
+                        }
+                    },
+                )
             }
         }
 
@@ -203,23 +218,13 @@ class StockMarketRouterChallenge {
             }
         }
 
-        EngineSpeed.entries.forEach { speed ->
-            run {
-                val engineFlow =
-                    MutableSharedFlow<MarketTick>(
-                        extraBufferCapacity = 64,
-                        onBufferOverflow = BufferOverflow.DROP_OLDEST,
-                    )
-
-                launchEngine(speed, engineFlow)
-            }
-        }
+        EngineSpeed.entries.forEach { speed -> run { launchEngine(speed) } }
     }
 
     @OptIn(FlowPreview::class)
     private suspend fun generateEngine(
         engineSpeed: EngineSpeed,
-        engineFlow: SharedFlow<MarketTick>,
+        engineFlow: Flow<MarketTick>,
         onRestart: (suspend () -> Unit)?,
     ) = coroutineScope {
         val isSlow = engineSpeed == EngineSpeed.SLOW

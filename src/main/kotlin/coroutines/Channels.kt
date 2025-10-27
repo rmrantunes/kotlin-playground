@@ -273,19 +273,15 @@ class StockMarketRouterChallenge {
         val engineRestartCount = AtomicInteger(0)
 
         while (isActive) {
-            supervisorScope {
-                if (engineRestartCount.get() > 0) launch { onRestart?.invoke() }
-
-                launch {
-                    try {
-                        engineFlow.collect { process(it) }
-                    } catch (e: CancellationException) {} catch (e: RuntimeException) {
-                        engineRestartCount.incrementAndGet()
-                        restartCount.incrementAndGet()
-                        println("[$engineSpeed engine]: restarting due to: ${e.message}")
-                        cancel("[$engineSpeed engine]: restarting due to: ${e.message}", e)
-                    }
-                }
+            if (engineRestartCount.get() > 0) onRestart?.invoke()
+            try {
+                engineFlow.collect { process(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: RuntimeException) {
+                restartCount.incrementAndGet()
+                engineRestartCount.incrementAndGet()
+                println("[$engineSpeed engine]: restarting due to: ${e.message}")
             }
         }
     }

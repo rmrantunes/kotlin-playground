@@ -178,7 +178,12 @@ class StockMarketRouterChallenge {
                     .onEach { engineFlow.emit(it) }
                     .launchIn(this)
 
-                generateEngine(engineSpeed, engineFlow.asSharedFlow())
+                generateEngine(engineSpeed, engineFlow.asSharedFlow(), onRestart = {
+                    routerFlow.replayCache.firstOrNull()?.let {
+                        println("[$engineSpeed engine] from cache $it")
+                        engineFlow.emit(it)
+                    }
+                })
             }
         }
 
@@ -202,8 +207,7 @@ class StockMarketRouterChallenge {
             run {
                 val engineFlow =
                     MutableSharedFlow<MarketTick>(
-                        1,
-                        64,
+                        extraBufferCapacity = 64,
                         onBufferOverflow = BufferOverflow.DROP_OLDEST,
                     )
 
@@ -216,7 +220,7 @@ class StockMarketRouterChallenge {
     private suspend fun generateEngine(
         engineSpeed: EngineSpeed,
         engineFlow: SharedFlow<MarketTick>,
-        restart: Boolean = false,
+        onRestart: (suspend () -> Unit)?,
     ) = coroutineScope {
         val isSlow = engineSpeed == EngineSpeed.SLOW
 
@@ -241,19 +245,17 @@ class StockMarketRouterChallenge {
             processedCount.incrementAndGet()
         }
 
+        val engineRestartCount = AtomicInteger(0)
+
         while (isActive) {
             supervisorScope {
+                if (engineRestartCount.get() > 0) launch { onRestart?.invoke() }
+
                 launch {
                     try {
-                        //        val cacheTick = routerCache.replayCache.firstOrNull()
-                        //            if (restart && cacheTick != null) {
-                        //                println("[$engineSpeed engine] Restating engine...")
-                        //                restartCount.incrementAndGet()
-                        //                process(cacheTick)
-                        //            }
-
                         engineFlow.collect { process(it) }
                     } catch (e: RuntimeException) {
+                        engineRestartCount.incrementAndGet()
                         restartCount.incrementAndGet()
                         println("[$engineSpeed engine]: restarting due to: ${e.message}")
                         cancel("[$engineSpeed engine]: restarting due to: ${e.message}", e)

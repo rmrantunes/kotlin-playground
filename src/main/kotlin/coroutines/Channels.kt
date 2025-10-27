@@ -135,9 +135,11 @@ data class MarketTick(
 class StockMarketRouterChallenge {
     private val symbols = listOf("AAPL", "MSFT", "GOOGL", "TSLA", "NVDA")
     private val idGenerator = AtomicInteger(0)
-    private val processedCount = AtomicInteger(0)
     private val droppedCount = AtomicInteger(0)
     private val restartCount = AtomicInteger(0)
+    private val slowEngineProcessCount = AtomicInteger(0)
+    private val mediumEngineProcessCount = AtomicInteger(0)
+    private val fastEngineProcessCount = AtomicInteger(0)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun execute() = coroutineScope {
@@ -149,14 +151,24 @@ class StockMarketRouterChallenge {
                     delay(1)
                 }
             }
-
             launch { router(marketFeedChannel) }.join()
             marketFeedChannel.cancel()
         }
 
-        println("Processed: ${processedCount.get()}")
+        val list =
+            listOf(
+                fastEngineProcessCount.get(),
+                mediumEngineProcessCount.get(),
+                slowEngineProcessCount.get(),
+            )
+
+        println("Processed: ${list.sum()}")
+        println("|- FAST: ${list[0]}")
+        println("|- MEDIUM: ${list[1]}")
+        println("|- SLOW: ${list[2]}")
         println("Restarted: ${restartCount.get()}")
-        println("Dropped: ${droppedCount.get()}")
+        val dropped = droppedCount.get()
+        println("Dropped: $dropped (${dropped / 10000 * 100}%)")
     }
 
     @OptIn(InternalCoroutinesApi::class)
@@ -233,6 +245,14 @@ class StockMarketRouterChallenge {
             if (Random.nextInt(1, 100) > 95) throw RuntimeException("Too much, baby")
         }
 
+        fun incrementProcessCount() {
+            when (engineSpeed) {
+                EngineSpeed.FAST -> fastEngineProcessCount.incrementAndGet()
+                EngineSpeed.MEDIUM -> mediumEngineProcessCount.incrementAndGet()
+                EngineSpeed.SLOW -> slowEngineProcessCount.incrementAndGet()
+            }
+        }
+
         suspend fun process(tick: MarketTick) {
             val delayTime =
                 when (engineSpeed) {
@@ -247,7 +267,7 @@ class StockMarketRouterChallenge {
                 "[$engineSpeed engine] #${tick.id} ${tick.side} ${tick.symbol} @ %.2f | ${tick.timestamp}"
                     .format(tick.price)
             )
-            processedCount.incrementAndGet()
+            incrementProcessCount()
         }
 
         val engineRestartCount = AtomicInteger(0)

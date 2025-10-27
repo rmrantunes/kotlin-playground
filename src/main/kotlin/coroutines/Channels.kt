@@ -3,13 +3,8 @@ package org.example.coroutines
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.ReceiveChannel
-import kotlinx.coroutines.channels.produce
-import kotlinx.coroutines.channels.toList
+import kotlinx.coroutines.channels.*
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.selects.selectUnbiased
 
 data class Item(val name: String, val price: Double)
@@ -163,40 +158,27 @@ class StockMarketRouterChallenge {
         println("Restarted: ${restartCount.get()}")
     }
 
+    @OptIn(InternalCoroutinesApi::class)
     private suspend fun router(marketFeedChannel: ReceiveChannel<MarketTick>) = coroutineScope {
-        val supervisorJob = SupervisorJob()
-        val supervisorScope = CoroutineScope(coroutineContext + supervisorJob)
-
         val routerFlow =
             MutableSharedFlow<MarketTick>(1, 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
         val highPriority = Channel<MarketTick>(64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
         val lowPriority = Channel<MarketTick>(64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
-        fun launchEngine(
-            engineSpeed: EngineSpeed,
-            engineFlow: MutableSharedFlow<MarketTick>,
-            restart: Boolean = false,
-        ) {
-            supervisorScope.launch {
-                val middleStageFlowJob =
-                    routerFlow
-                        .filter {
-                            when (engineSpeed) {
-                                EngineSpeed.FAST -> it.side == OrderSide.BUY
-                                EngineSpeed.MEDIUM -> it.symbol == "MSFT"
-                                else -> true
-                            }
+        fun launchEngine(engineSpeed: EngineSpeed, engineFlow: MutableSharedFlow<MarketTick>) {
+            launch {
+                routerFlow
+                    .filter {
+                        when (engineSpeed) {
+                            EngineSpeed.FAST -> it.side == OrderSide.BUY
+                            EngineSpeed.MEDIUM -> it.symbol == "MSFT"
+                            else -> true
                         }
-                        .onEach { engineFlow.emit(it) }
-                        .launchIn(this)
+                    }
+                    .onEach { engineFlow.emit(it) }
+                    .launchIn(this)
 
-                try {
-                    generateEngine(engineSpeed, engineFlow.asSharedFlow(), restart)
-                } catch (e: Exception) {
-                    println("Exception while launching engine: $e")
-                    middleStageFlowJob.cancel()
-                    launchEngine(engineSpeed, engineFlow, restart = true)
-                }
+                generateEngine(engineSpeed, engineFlow.asSharedFlow())
             }
         }
 
@@ -224,6 +206,7 @@ class StockMarketRouterChallenge {
                         64,
                         onBufferOverflow = BufferOverflow.DROP_OLDEST,
                     )
+
                 launchEngine(speed, engineFlow)
             }
         }
@@ -258,15 +241,25 @@ class StockMarketRouterChallenge {
             processedCount.incrementAndGet()
         }
 
-        val cacheTick = engineFlow.replayCache.firstOrNull()
-        launch {
-            if (restart && cacheTick != null) {
-                println("[$engineSpeed engine] Restating engine...")
-                restartCount.incrementAndGet()
-                process(cacheTick)
-            }
+        while (isActive) {
+            supervisorScope {
+                launch {
+                    try {
+                        //        val cacheTick = routerCache.replayCache.firstOrNull()
+                        //            if (restart && cacheTick != null) {
+                        //                println("[$engineSpeed engine] Restating engine...")
+                        //                restartCount.incrementAndGet()
+                        //                process(cacheTick)
+                        //            }
 
-            engineFlow.distinctUntilChangedBy { "${it.symbol} ${it.side}" }.collect { process(it) }
+                        engineFlow.collect { process(it) }
+                    } catch (e: RuntimeException) {
+                        restartCount.incrementAndGet()
+                        println("[$engineSpeed engine]: restarting due to: ${e.message}")
+                        cancel("[$engineSpeed engine]: restarting due to: ${e.message}", e)
+                    }
+                }
+            }
         }
     }
 
